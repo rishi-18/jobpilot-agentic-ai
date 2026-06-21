@@ -9,9 +9,9 @@ Update this file after every feature. Any AI agent reading this should immediate
 **Phase:**
 Phase 2 — Profile Page
 **Last completed:**
-06 Profile Save Logic
-**Next:**
 07 AI Profile Extraction from Resume
+**Next:**
+08 Resume PDF Generation from Profile
 
 ---
 
@@ -28,7 +28,7 @@ Phase 2 — Profile Page
 
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
-- [ ] 07 AI Profile Extraction from Resume
+- [x] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
 
 ### Phase 3 — Find Jobs Page
@@ -76,6 +76,10 @@ Phase 2 — Profile Page
 - `app/profile/page.tsx` is now a live read against `profiles` (filtered by `auth.uid()`), with `email` always layered from the auth session so the disabled email field shows the current identity. Empty rows fall back to `emptyProfile(email)`.
 - `components/profile/ResumeSection.tsx` now holds the picked `File` in a `useRef` and exposes it via `forwardRef` + `useImperativeHandle`. The form pulls the `File` on submit and clears the ref after a successful save.
 - `components/profile/ProfileForm.tsx` swaps its local-only save handler for `saveProfile` behind `useTransition`. The submit button disables and shows "Saving..." while in flight, the inline status message recolors to `text-success-darker` after a successful save, switches to `text-error` with the server message on failure, and surfaces `role="alert"` only on errors so screen readers pick them up.
+- Installed `pdf-parse`, `openai`, and `zod` for the AI parsing features. Added a shared `logAgentError` helper in `lib/agent-logger.ts` to insert diagnostic events into `agent_logs`.
+- Implemented `agent/extractor.ts` to convert PDF buffer to text via the documented `pdf-parse` default function and structured it with GPT-4o using custom system prompts and strict Zod schema checking.
+- Developed `app/api/resume/extract/route.ts` API route. If a user has already saved a resume PDF, the route now derives the storage object path and downloads it through the authenticated InsForge storage client before parsing; if that read fails it returns a user-facing re-upload prompt instead of a hard 500.
+- Integrated the "Extract from Resume" button in the client-side `ResumeSection` that calls the extraction endpoint. When clicked, it automatically parses, structures, and maps candidate information back to the form state without saving it immediately, so the user can review before they commit.
 
 ---
 

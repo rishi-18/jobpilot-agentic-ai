@@ -59,17 +59,85 @@ const inputClass =
 type Status =
   | { kind: "idle" }
   | { kind: "saved"; at: string; isComplete: boolean }
+  | { kind: "extracted"; at: string }
   | { kind: "error"; message: string };
 
 export function ProfileForm({ initialProfile }: Props) {
   const [profile, setProfile] = useState<Profile>(initialProfile);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [isSaving, startTransition] = useTransition();
+  const [isExtracting, setIsExtracting] = useState(false);
   const resumeRef = useRef<ResumeSectionHandle>(null);
   // Track whether the user explicitly removed the resume on this save so the
   // server action knows to drop the storage object, even if `profile.resume`
   // was null before they ever uploaded anything.
   const resumeClearedRef = useRef(false);
+
+  async function handleExtract() {
+    const pendingFile = resumeRef.current?.getPendingFile() ?? null;
+    const formData = new FormData();
+    if (pendingFile) {
+      formData.append("resume", pendingFile);
+    }
+
+    setIsExtracting(true);
+    setStatus({ kind: "idle" });
+
+    try {
+      const response = await fetch("/api/resume/extract", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.success && result.data) {
+        setProfile((prev) => ({
+          ...prev,
+          fullName: result.data.fullName || prev.fullName,
+          phone: result.data.phone || prev.phone,
+          location: result.data.location || prev.location,
+          linkedinUrl: result.data.linkedinUrl || prev.linkedinUrl,
+          portfolioUrl: result.data.portfolioUrl || prev.portfolioUrl,
+          workAuthorization: result.data.workAuthorization || prev.workAuthorization,
+          currentTitle: result.data.currentTitle || prev.currentTitle,
+          experienceLevel: result.data.experienceLevel || prev.experienceLevel,
+          yearsExperience: result.data.yearsExperience || prev.yearsExperience,
+          skills: result.data.skills?.length ? result.data.skills : prev.skills,
+          industries: result.data.industries?.length ? result.data.industries : prev.industries,
+          workExperience: result.data.workExperience?.length ? result.data.workExperience : prev.workExperience,
+          education: {
+            degree: result.data.education?.degree || prev.education.degree,
+            fieldOfStudy: result.data.education?.fieldOfStudy || prev.education.fieldOfStudy,
+            institution: result.data.education?.institution || prev.education.institution,
+            graduationYear: result.data.education?.graduationYear || prev.education.graduationYear,
+          },
+          jobTitlesSeeking: result.data.jobTitlesSeeking?.length ? result.data.jobTitlesSeeking : prev.jobTitlesSeeking,
+          remotePreference: result.data.remotePreference || prev.remotePreference,
+          preferredLocations: result.data.preferredLocations?.length ? result.data.preferredLocations : prev.preferredLocations,
+          salaryExpectation: result.data.salaryExpectation || prev.salaryExpectation,
+          coverLetterTone: result.data.coverLetterTone || prev.coverLetterTone,
+        }));
+
+        setStatus({
+          kind: "extracted",
+          at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        });
+      } else {
+        setStatus({
+          kind: "error",
+          message: result.error || "Failed to extract information from resume.",
+        });
+      }
+    } catch (err) {
+      console.error("[ProfileForm] Extraction failed:", err);
+      setStatus({
+        kind: "error",
+        message: "An unexpected error occurred during extraction.",
+      });
+    } finally {
+      setIsExtracting(false);
+    }
+  }
 
   const completion = useMemo(() => computeCompletion(profile), [profile]);
 
@@ -156,14 +224,16 @@ export function ProfileForm({ initialProfile }: Props) {
       ? status.isComplete
         ? `Saved at ${status.at}. Your profile is complete — matching is ready to go.`
         : `Saved at ${status.at}. A few fields are still missing.`
-      : status.kind === "error"
-        ? status.message
-        : "Changes are not saved yet.";
+      : status.kind === "extracted"
+        ? `Successfully extracted from resume at ${status.at}. Please review and save changes.`
+        : status.kind === "error"
+          ? status.message
+          : "Changes are not saved yet.";
 
   const statusTone =
     status.kind === "error"
       ? "text-error"
-      : status.kind === "saved"
+      : status.kind === "saved" || status.kind === "extracted"
         ? "text-success-darker"
         : "text-text-muted";
 
@@ -186,6 +256,8 @@ export function ProfileForm({ initialProfile }: Props) {
               ref={resumeRef}
               resume={profile.resume}
               onChange={handleResumeChange}
+              onExtract={handleExtract}
+              isExtracting={isExtracting}
             />
           </div>
         </section>
@@ -425,11 +497,11 @@ export function ProfileForm({ initialProfile }: Props) {
 
             <div className="flex items-center justify-between border-t border-border pt-6">
               <p className={`text-[12px] ${statusTone}`} role={status.kind === "error" ? "alert" : undefined}>
-                {isSaving ? "Saving your profile..." : statusMessage}
+                {isSaving ? "Saving your profile..." : isExtracting ? "Extracting profile details from resume..." : statusMessage}
               </p>
               <button
                 type="submit"
-                disabled={isSaving}
+                disabled={isSaving || isExtracting}
                 className="rounded-md bg-accent px-5 py-3 text-sm font-medium text-accent-foreground shadow-sm transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSaving ? "Saving..." : "Save Profile"}

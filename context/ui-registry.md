@@ -205,7 +205,7 @@ Capped at 3 roles per the build plan. Toggling "Currently working here" both dis
 ### Profile Resume Section
 
 - File: `components/profile/ResumeSection.tsx`
-- Last updated: 2026-06-20
+- Last updated: 2026-06-21
 
 | Property         | Class |
 | ---------------- | ----- |
@@ -220,7 +220,7 @@ Capped at 3 roles per the build plan. Toggling "Currently working here" both dis
 | Error text       | `text-[12px] text-error` |
 
 **Pattern notes:**
-The dropzone is a `<label>` wrapping a visually-hidden `<input type="file">` so it stays keyboard-accessible. The PDF-only and 10 MB cap rules live next to the file picker. "Select Resume" becomes "Replace Resume" once a file is in state. The "Generate Resume from Profile" button is intentionally a no-op — feature 08 wires it to `/api/resume/generate`.
+The dropzone is a `<label>` wrapping a visually-hidden `<input type="file">` so it stays keyboard-accessible. The PDF-only and 10 MB cap rules live next to the file picker. "Select Resume" becomes "Replace Resume" once a file is in state. Wires the "Extract from Resume" button (which shows only when a resume file exists) to trigger the AI parser agent at `/api/resume/extract`. The extraction process works with both a newly picked file or the stored database resume. During extraction, inputs are disabled, the button reads "Extracting...", and a progress message appears in the form footer. The "Generate Resume from Profile" button is intentionally a no-op — feature 08 wires it to `/api/resume/generate`.
 
 ### Navbar Log Out Button
 

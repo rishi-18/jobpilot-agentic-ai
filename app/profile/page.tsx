@@ -57,9 +57,9 @@ function profileFromRow(row: ProfileRow, email: string): Profile {
     linkedinUrl: row.linkedin_url ?? "",
     portfolioUrl: row.portfolio_url ?? "",
     workAuthorization: row.work_authorization ?? "",
-    // We only have the public URL at this point; the form treats `resume` as
-    // an optional UI preview, so leave it null until the user picks a new file.
-    resume: null,
+    resume: row.resume_pdf_url
+      ? { name: decodeURIComponent(row.resume_pdf_url.split("/").pop() || "resume.pdf"), size: 0 }
+      : null,
   };
 }
 

@@ -15,18 +15,21 @@ export type ResumeSectionHandle = {
 type Props = {
   resume: ResumeFile | null;
   onChange: (resume: ResumeFile | null) => void;
+  onExtract?: () => void;
+  isExtracting?: boolean;
 };
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
 function formatSize(bytes: number): string {
+  if (bytes <= 0) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function ResumeSection(
-  { resume, onChange },
+  { resume, onChange, onExtract, isExtracting },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -124,13 +127,14 @@ export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function Res
             </div>
             <div>
               <p className="text-sm font-medium text-text-primary">{resume.name}</p>
-              <p className="text-[12px] text-text-muted">{formatSize(resume.size)}</p>
+              {resume.size > 0 && <p className="text-[12px] text-text-muted">{formatSize(resume.size)}</p>}
             </div>
           </div>
           <button
             type="button"
             onClick={clear}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary"
+            disabled={isExtracting}
+            className="rounded-md border border-border bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Remove
           </button>
@@ -142,18 +146,32 @@ export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function Res
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
+          disabled={isExtracting}
           onClick={() => inputRef.current?.click()}
-          className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary"
+          className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
         >
           {resume ? "Replace Resume" : "Select Resume"}
         </button>
+
+        {resume && onExtract && (
+          <button
+            type="button"
+            onClick={onExtract}
+            disabled={isExtracting}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isExtracting ? "Extracting..." : "Extract from Resume"}
+          </button>
+        )}
+
         {/* Feature 08 — Generate Resume from Profile. Stays visible per spec but is intentionally a no-op in 05. */}
         <button
           type="button"
+          disabled={isExtracting}
           onClick={() => {
             /* 08 owns this — wired to /api/resume/generate */
           }}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
         >
           Generate Resume from Profile
         </button>
