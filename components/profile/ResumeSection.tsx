@@ -17,6 +17,8 @@ type Props = {
   onChange: (resume: ResumeFile | null) => void;
   onExtract?: () => void;
   isExtracting?: boolean;
+  onGenerate?: () => void;
+  isGenerating?: boolean;
 };
 
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -29,7 +31,7 @@ function formatSize(bytes: number): string {
 }
 
 export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function ResumeSection(
-  { resume, onChange, onExtract, isExtracting },
+  { resume, onChange, onExtract, isExtracting, onGenerate, isGenerating },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -126,14 +128,31 @@ export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function Res
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-text-primary">{resume.name}</p>
+              {resume.url ? (
+                <a
+                  href={resume.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline"
+                  title="View uploaded resume"
+                >
+                  {resume.name}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-80">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              ) : (
+                <p className="text-sm font-medium text-text-primary">{resume.name}</p>
+              )}
               {resume.size > 0 && <p className="text-[12px] text-text-muted">{formatSize(resume.size)}</p>}
             </div>
           </div>
           <button
             type="button"
             onClick={clear}
-            disabled={isExtracting}
+            disabled={isExtracting || isGenerating}
             className="rounded-md border border-border bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-60"
           >
             Remove
@@ -146,7 +165,7 @@ export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function Res
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          disabled={isExtracting}
+          disabled={isExtracting || isGenerating}
           onClick={() => inputRef.current?.click()}
           className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -157,24 +176,23 @@ export const ResumeSection = forwardRef<ResumeSectionHandle, Props>(function Res
           <button
             type="button"
             onClick={onExtract}
-            disabled={isExtracting}
+            disabled={isExtracting || isGenerating}
             className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isExtracting ? "Extracting..." : "Extract from Resume"}
           </button>
         )}
 
-        {/* Feature 08 — Generate Resume from Profile. Stays visible per spec but is intentionally a no-op in 05. */}
-        <button
-          type="button"
-          disabled={isExtracting}
-          onClick={() => {
-            /* 08 owns this — wired to /api/resume/generate */
-          }}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Generate Resume from Profile
-        </button>
+        {onGenerate && (
+          <button
+            type="button"
+            disabled={isExtracting || isGenerating}
+            onClick={onGenerate}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isGenerating ? "Generating..." : "Generate Resume from Profile"}
+          </button>
+        )}
       </div>
     </div>
   );

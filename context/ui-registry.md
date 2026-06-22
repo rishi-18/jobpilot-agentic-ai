@@ -51,7 +51,7 @@ The auth page uses a single centered card with the same border/shadow language a
 ### Dashboard Page
 
 - File: `app/dashboard/page.tsx`
-- Last updated: 2026-06-20
+- Last updated: 2026-06-22
 
 | Property         | Class |
 | ---------------- | ----- |
@@ -66,7 +66,8 @@ The auth page uses a single centered card with the same border/shadow language a
 | Accent usage     | `bg-accent`, `text-accent`, `bg-info-medium`, `bg-success`, `bg-success-lightest` |
 
 **Pattern notes:**
-The dashboard uses a sectioned card layout with high-level stats, then two-column analytical blocks and chart-like mock visuals. The important consistency rule is that all cards stay white with border/shadow treatment, while emphasis comes from token-based bars, badges, and banners rather than colored panels.
+The dashboard uses a sectioned card layout with high-level stats, then two-column analytical blocks and dynamic chart components. All cards stay white with border/shadow treatment. Wires real-time `agent_runs` and `jobs` queries for the chronological activity feed (rendered as timeline with success/info color coding) and calculates metrics for company research, jobs found, and match scores.
+
 
 ### Find Jobs Page
 
@@ -205,7 +206,7 @@ Capped at 3 roles per the build plan. Toggling "Currently working here" both dis
 ### Profile Resume Section
 
 - File: `components/profile/ResumeSection.tsx`
-- Last updated: 2026-06-21
+- Last updated: 2026-06-22
 
 | Property         | Class |
 | ---------------- | ----- |
@@ -220,7 +221,7 @@ Capped at 3 roles per the build plan. Toggling "Currently working here" both dis
 | Error text       | `text-[12px] text-error` |
 
 **Pattern notes:**
-The dropzone is a `<label>` wrapping a visually-hidden `<input type="file">` so it stays keyboard-accessible. The PDF-only and 10 MB cap rules live next to the file picker. "Select Resume" becomes "Replace Resume" once a file is in state. Wires the "Extract from Resume" button (which shows only when a resume file exists) to trigger the AI parser agent at `/api/resume/extract`. The extraction process works with both a newly picked file or the stored database resume. During extraction, inputs are disabled, the button reads "Extracting...", and a progress message appears in the form footer. The "Generate Resume from Profile" button is intentionally a no-op — feature 08 wires it to `/api/resume/generate`.
+The dropzone is a `<label>` wrapping a visually-hidden `<input type="file">` so it stays keyboard-accessible. The PDF-only and 10 MB cap rules live next to the file picker. "Select Resume" becomes "Replace Resume" once a file is in state. Wires the "Extract from Resume" button (which shows only when a resume file exists) to trigger the AI parser agent at `/api/resume/extract`. The extraction process works with both a newly picked file or the stored database resume. During extraction, inputs are disabled, the button reads "Extracting...", and a progress message appears in the form footer. The "Generate Resume from Profile" button is wired to `/api/resume/generate` via the `onGenerate` callback, which first auto-saves the profile form data and then compiles and uploads the PDF. The button shows "Generating..." during progress.
 
 ### Navbar Log Out Button
 
@@ -256,3 +257,37 @@ The visible button text is `Log out`. A leading avatar pill still shows the firs
 
 **Pattern notes:**
 A null-rendering client component that mirrors the server-resolved InsForge user into PostHog. Required because `person_profiles: "identified_only"` skips all events without an identity, and a plain server-side capture cannot attach the JS SDK identity. Render it inside `<main>` next to the navbar so it is present on every authenticated page and resets cleanly after sign-out.
+
+### Job Details Page
+
+- File: `app/find-jobs/[id]/page.tsx`
+- Last updated: 2026-06-22
+
+| Property         | Class |
+| ---------------- | ----- |
+| Background       | `min-h-screen bg-background` |
+| Border           | `border border-border` |
+| Border radius    | `rounded-2xl`, `rounded-xl`, `rounded-full` |
+| Text — primary   | `text-text-primary`, `text-text-darkest` |
+| Text — secondary | `text-text-secondary`, `text-text-muted` |
+| Spacing          | `px-8 pb-16`, `mt-8`, `mt-6`, `p-6`, `p-4` |
+| Accent usage     | `bg-accent text-accent-foreground`, `bg-success-lightest text-success-foreground`, `bg-info-lightest text-info-foreground` |
+
+**Pattern notes:**
+Contains the comprehensive layout displaying job details, metrics cards, match scoring reason, and a visual list of matched skills vs profile gap skills. Preserves whitespace in description styling using `whitespace-pre-line`.
+
+### Company Research Dossier Card
+
+- File: `app/find-jobs/[id]/page.tsx` (dossier blocks)
+- Last updated: 2026-06-22
+
+| Property         | Class |
+| ---------------- | ----- |
+| Border           | `border border-border`, `border-dashed border-border` |
+| Border radius    | `rounded-2xl`, `rounded-xl` |
+| Spacing          | `p-6`, `py-12`, `space-y-6`, `space-y-2` |
+| Accent usage     | `text-accent`, `bg-surface-secondary` |
+| Button           | Client components with disabled loading state and styling matching default CTAs |
+
+**Pattern notes:**
+Renders the full 9-field company intelligence dossier when available or displays a custom "No research yet" empty state card with a call-to-action button that triggers background crawler and LLM research.

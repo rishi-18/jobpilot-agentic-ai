@@ -1,3 +1,4 @@
+import "@/agent/polyfill";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createInsforgeServer } from "@/lib/insforge-server";

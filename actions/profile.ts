@@ -121,23 +121,52 @@ export async function saveProfile(
       if (resumeFile.size > MAX_RESUME_BYTES) {
         return { ok: false, message: "Resume must be under 10 MB." };
       }
+
+      // Clean up folder
+      const userFolderPrefix = `${user.id}/`;
+      try {
+        const listRes = await insforge.storage.from(RESUME_BUCKET).list({ prefix: userFolderPrefix });
+        if (listRes.data && Array.isArray(listRes.data)) {
+          for (const file of listRes.data) {
+            const fileKey = file.key || file.name || (typeof file === "string" ? file : "");
+            if (fileKey) {
+              console.log("[profile/save] cleaning up file:", fileKey);
+              await insforge.storage.from(RESUME_BUCKET).remove(fileKey);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[profile/save] cleanup failed:", err);
+      }
+
       const objectPath = RESUME_OBJECT_PATH(user.id);
-      const { error: uploadError } = await insforge.storage
+      const uploadRes = await insforge.storage
         .from(RESUME_BUCKET)
         .upload(objectPath, resumeFile);
-      if (uploadError) {
-        console.error("[profile/save] resume upload failed", uploadError);
+
+      if (uploadRes.error || !uploadRes.data?.key) {
+        console.error("[profile/save] resume upload failed", uploadRes.error);
         return { ok: false, message: "We could not upload your resume. Please try again." };
       }
-      const { data: urlData } = insforge.storage.from(RESUME_BUCKET).getPublicUrl(objectPath);
+
+      const finalKey = uploadRes.data.key;
+      const { data: urlData } = insforge.storage.from(RESUME_BUCKET).getPublicUrl(finalKey);
       resumePdfUrl = urlData?.publicUrl ?? null;
     } else if (resumeAction === "clear") {
-      // Best-effort removal — a missing object should not block the form save.
-      const { error: removeError } = await insforge.storage
-        .from(RESUME_BUCKET)
-        .remove(RESUME_OBJECT_PATH(user.id));
-      if (removeError) {
-        console.warn("[profile/save] resume remove failed", removeError);
+      // Best-effort removal of the entire directory
+      const userFolderPrefix = `${user.id}/`;
+      try {
+        const listRes = await insforge.storage.from(RESUME_BUCKET).list({ prefix: userFolderPrefix });
+        if (listRes.data && Array.isArray(listRes.data)) {
+          for (const file of listRes.data) {
+            const fileKey = file.key || file.name || (typeof file === "string" ? file : "");
+            if (fileKey) {
+              await insforge.storage.from(RESUME_BUCKET).remove(fileKey);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[profile/save] resume remove failed", err);
       }
       resumePdfUrl = null;
     } else {

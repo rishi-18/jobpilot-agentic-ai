@@ -4,14 +4,14 @@ Update this file after every feature. Any AI agent reading this should immediate
 
 ---
 
-## Current Status
+### Current Status
 
 **Phase:**
-Phase 2 — Profile Page
+Phase 5 — Dashboard (Complete)
 **Last completed:**
-07 AI Profile Extraction from Resume
+17 Analytics Charts — Database-backed
 **Next:**
-08 Resume PDF Generation from Profile
+All features completed!
 
 ---
 
@@ -29,25 +29,25 @@ Phase 2 — Profile Page
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
 - [x] 07 AI Profile Extraction from Resume
-- [ ] 08 Resume PDF Generation from Profile
+- [x] 08 Resume PDF Generation from Profile
 
 ### Phase 3 — Find Jobs Page
 
 - [x] 09 Find Jobs Page — Full UI
-- [ ] 10 Adzuna Job Discovery
-- [ ] 11 Filter + Sort + Pagination
+- [x] 10 Adzuna Job Discovery
+- [x] 11 Filter + Sort + Pagination
 
 ### Phase 4 — Job Details Page
 
-- [ ] 12 Job Details Page — Full UI
-- [ ] 13 Company Research Agent
+- [x] 12 Job Details Page — Full UI
+- [x] 13 Company Research Agent
 
 ### Phase 5 — Dashboard
 
 - [x] 14 Dashboard Page — Full UI
-- [ ] 15 Stats Bar — Real Data
-- [ ] 16 Recent Activity — Real Data
-- [ ] 17 Analytics Charts — PostHog Data
+- [x] 15 Stats Bar — Real Data
+- [x] 16 Recent Activity — Real Data
+- [x] 17 Analytics Charts — Database-backed
 
 ---
 
@@ -77,9 +77,20 @@ Phase 2 — Profile Page
 - `components/profile/ResumeSection.tsx` now holds the picked `File` in a `useRef` and exposes it via `forwardRef` + `useImperativeHandle`. The form pulls the `File` on submit and clears the ref after a successful save.
 - `components/profile/ProfileForm.tsx` swaps its local-only save handler for `saveProfile` behind `useTransition`. The submit button disables and shows "Saving..." while in flight, the inline status message recolors to `text-success-darker` after a successful save, switches to `text-error` with the server message on failure, and surfaces `role="alert"` only on errors so screen readers pick them up.
 - Installed `pdf-parse`, `openai`, and `zod` for the AI parsing features. Added a shared `logAgentError` helper in `lib/agent-logger.ts` to insert diagnostic events into `agent_logs`.
-- Implemented `agent/extractor.ts` to convert PDF buffer to text via the documented `pdf-parse` default function and structured it with GPT-4o using custom system prompts and strict Zod schema checking.
+- Implemented `agent/extractor.ts` to convert PDF buffer to text via `PDFParse` and structured it with Groq `llama-3.3-70b-versatile` using custom system prompts and strict Zod schema checking.
 - Developed `app/api/resume/extract/route.ts` API route. If a user has already saved a resume PDF, the route now derives the storage object path and downloads it through the authenticated InsForge storage client before parsing; if that read fails it returns a user-facing re-upload prompt instead of a hard 500.
 - Integrated the "Extract from Resume" button in the client-side `ResumeSection` that calls the extraction endpoint. When clicked, it automatically parses, structures, and maps candidate information back to the form state without saving it immediately, so the user can review before they commit.
+- Implemented `app/api/resume/generate/route.ts` to polish profile content using Groq LLM and generate/persist resume PDF to InsForge storage.
+- Resolved "500 Internal Server Error" during PDF uploads to InsForge storage by constructing a Node `File` object instead of `Blob` (which S3 presigned POST forms require to extract filename metadata and size correctly).
+- Implemented directory prefix clean-up (listing and removing all matching files under user folders) prior to upload in `app/api/resume/generate/route.ts` and `actions/profile.ts`, preventing counter-suffixed files (like `resume (8).pdf`) and keeping storage clean.
+- Resolved "Object not found" verification error by parsing the object path/key dynamically from the user's `resume_pdf_url` (supporting both relative API endpoints and CDN path formats) in `app/api/resume/verify/route.ts` instead of assuming a hardcoded path.
+- Created `lib/utils.ts` to store shared constants like `MATCH_THRESHOLD = 70` to respect code standards.
+- Implemented `/api/agent/find` and `agent/discover.ts` to search jobs via the Adzuna API, filter out generic "remote" keywords from geographical `where` filters, execute GPT-4o compatibility scoring in parallel using `Promise.all`, save runs and matched jobs to the database, and log search actions to PostHog and `agent_logs`.
+- Split job results controls into `FilterControls` (tabs, search, sort) and `PaginationControls` (page numbers, count summary) to maintain layout consistency. Synchronized filter, search, sort, and pagination states to URL query parameters using React `useTransition` and a `450ms` debounce handler to optimize server-side database query performance.
+- Implemented the dynamic details page `app/find-jobs/[id]/page.tsx` using Next.js 15+ async `params` resolution. Enhanced the relative time formatter with sub-hour granularity, wired colored badge lists for matched vs missing skills, and pre-implemented a client-side `ResearchButton` to trigger `/api/agent/research` for Feature 13 integration.
+- Designed an automated description resolution engine that identifies truncated job postings, crawls the external post URL to follow HTTP redirects, cleans HTML body elements, and uses Groq to isolate and write back the full formatted job description to the database, ensuring complete display to the user.
+- Implemented `components/dashboard/Interactive3DCard.tsx` and `components/dashboard/DashboardCharts.tsx` utilizing Recharts. Designed custom 3D SVG cylindrical renderers for bar charts and gradient neon filters for area line charts. Enabled CSS 3D perspective card rotation on cursor hover.
+- Wired the 4 stat cards in `app/dashboard/page.tsx` to real metrics fetched using a single aggregate-optimized select query over `jobs` for the active user, calculating total jobs, average match rate, companies researched, and rolling 7-day job discovery metrics in memory.
 
 ---
 

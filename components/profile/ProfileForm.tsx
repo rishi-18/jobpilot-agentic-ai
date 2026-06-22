@@ -67,6 +67,7 @@ export function ProfileForm({ initialProfile }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [isSaving, startTransition] = useTransition();
   const [isExtracting, setIsExtracting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const resumeRef = useRef<ResumeSectionHandle>(null);
   // Track whether the user explicitly removed the resume on this save so the
   // server action knows to drop the storage object, even if `profile.resume`
@@ -158,15 +159,10 @@ export function ProfileForm({ initialProfile }: Props) {
     patch("resume", next);
   }
 
-  function handleSave(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function executeSave(): Promise<boolean> {
     const pendingFile = resumeRef.current?.getPendingFile() ?? null;
     const initialHadResume = initialProfile.resume !== null;
     const userTouchedResume = pendingFile !== null || resumeClearedRef.current;
-    // Three states drive the server action: undefined = do not touch the column
-    // (user did not touch the resume on this save and nothing was attached before),
-    // "keep" = leave the existing URL alone, "clear" = remove the storage object
-    // and null the column.
     const resumeAction: SaveProfilePayload["resumeAction"] = !userTouchedResume
       ? initialHadResume
         ? "keep"
@@ -175,9 +171,6 @@ export function ProfileForm({ initialProfile }: Props) {
         ? "clear"
         : "keep";
 
-    // The client-side `resume` is just a UI preview (`{ name, size }`). Strip it
-    // before sending the payload to the server — the server only cares about the
-    // resumeAction + the separate resumeFile argument.
     const { resume, ...rest } = profile;
     void resume;
     const payload: SaveProfilePayload = {
@@ -203,20 +196,77 @@ export function ProfileForm({ initialProfile }: Props) {
       resumeAction,
     };
 
-    startTransition(async () => {
-      const result = await saveProfile(payload, pendingFile);
-      if (result.ok) {
-        resumeRef.current?.clearPendingFile();
-        resumeClearedRef.current = false;
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        const result = await saveProfile(payload, pendingFile);
+        if (result.ok) {
+          resumeRef.current?.clearPendingFile();
+          resumeClearedRef.current = false;
+          setStatus({
+            kind: "saved",
+            at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            isComplete: result.isComplete,
+          });
+          resolve(true);
+        } else {
+          setStatus({ kind: "error", message: result.message });
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  function handleSave(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void executeSave();
+  }
+
+  async function handleGenerate() {
+    setStatus({ kind: "idle" });
+    setIsGenerating(true);
+
+    try {
+      const saveOk = await executeSave();
+      if (!saveOk) {
+        setIsGenerating(false);
+        return;
+      }
+
+      const response = await fetch("/api/resume/generate", {
+        method: "POST",
+      });
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        setProfile((prev) => ({
+          ...prev,
+          resume: {
+            name: result.data.name,
+            size: 0,
+            url: result.data.url,
+          },
+        }));
+
         setStatus({
           kind: "saved",
           at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          isComplete: result.isComplete,
+          isComplete: true,
         });
       } else {
-        setStatus({ kind: "error", message: result.message });
+        setStatus({
+          kind: "error",
+          message: result.error || "Failed to generate resume from profile.",
+        });
       }
-    });
+    } catch (err) {
+      console.error("[ProfileForm] Generation failed:", err);
+      setStatus({
+        kind: "error",
+        message: "An unexpected error occurred during resume generation.",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   }
 
   const statusMessage =
@@ -258,6 +308,8 @@ export function ProfileForm({ initialProfile }: Props) {
               onChange={handleResumeChange}
               onExtract={handleExtract}
               isExtracting={isExtracting}
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
             />
           </div>
         </section>
@@ -497,11 +549,17 @@ export function ProfileForm({ initialProfile }: Props) {
 
             <div className="flex items-center justify-between border-t border-border pt-6">
               <p className={`text-[12px] ${statusTone}`} role={status.kind === "error" ? "alert" : undefined}>
-                {isSaving ? "Saving your profile..." : isExtracting ? "Extracting profile details from resume..." : statusMessage}
+                {isSaving
+                  ? "Saving your profile..."
+                  : isExtracting
+                    ? "Extracting profile details from resume..."
+                    : isGenerating
+                      ? "Generating resume from profile..."
+                      : statusMessage}
               </p>
               <button
                 type="submit"
-                disabled={isSaving || isExtracting}
+                disabled={isSaving || isExtracting || isGenerating}
                 className="rounded-md bg-accent px-5 py-3 text-sm font-medium text-accent-foreground shadow-sm transition-colors hover:bg-accent-dark disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isSaving ? "Saving..." : "Save Profile"}

@@ -1,6 +1,9 @@
-import pdf from "pdf-parse";
+import "./polyfill";
+import { PDFParse } from "pdf-parse";
 import OpenAI from "openai";
 import { z } from "zod";
+import path from "path";
+import { pathToFileURL } from "url";
 
 import { logAgentError } from "@/lib/agent-logger";
 
@@ -52,11 +55,20 @@ export async function extractProfileFromPdf(
   pdfBuffer: Buffer,
   userId: string
 ): Promise<{ success: boolean; data?: ExtractedProfile; error?: string }> {
+  let parser: PDFParse | null = null;
   try {
-    // 1. Extract text using pdf-parse's default parser function.
+    // 1. Extract text using pdf-parse's PDFParse class.
     let text = "";
     try {
-      const pdfData = await pdf(pdfBuffer);
+      const workerPath = path.resolve(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs");
+      PDFParse.setWorker(pathToFileURL(workerPath).href);
+    } catch (workerErr) {
+      console.warn("[agent/extractor] failed to set pdf worker path:", workerErr);
+    }
+
+    try {
+      parser = new PDFParse({ data: new Uint8Array(pdfBuffer), disableWorker: true } as any);
+      const pdfData = await parser.getText();
       text = pdfData.text?.trim() || "";
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -66,6 +78,12 @@ export async function extractProfileFromPdf(
         success: false,
         error: "Could not parse PDF. Please verify that the PDF is not corrupted or scanned.",
       };
+    } finally {
+      if (parser) {
+        await parser.destroy().catch((destroyErr) => {
+          console.warn("[agent/extractor] failed to destroy pdf parser:", destroyErr);
+        });
+      }
     }
 
     if (text.length < 50) {
@@ -76,10 +94,14 @@ export async function extractProfileFromPdf(
       };
     }
 
-    // 2. Call OpenAI GPT-4o
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+    // 2. Call Groq API using GROK_API_KEY / GROQ_API_KEY environment variables
+    const groqApiKey = process.env.GROK_API_KEY || process.env.GROQ_API_KEY;
+    const openai = new OpenAI({
+      apiKey: groqApiKey!,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "llama-3.3-70b-versatile",
       response_format: { type: "json_object" },
       temperature: 0.3,
       messages: [
@@ -128,7 +150,7 @@ Only return JSON matching this schema. If any field cannot be found, default it 
 
     const content = response.choices[0].message.content;
     if (!content) {
-      await logAgentError(userId, "OpenAI GPT-4o returned empty completion content for resume extraction", "error");
+      await logAgentError(userId, "Groq API returned empty completion content for resume extraction", "error");
       return {
         success: false,
         error: "AI model failed to return a response.",
@@ -140,7 +162,7 @@ Only return JSON matching this schema. If any field cannot be found, default it 
       rawJson = JSON.parse(content);
     } catch (parseErr) {
       const parseErrMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      await logAgentError(userId, `Failed to parse GPT-4o JSON response: ${parseErrMsg}`, "error");
+      await logAgentError(userId, `Failed to parse Groq JSON response: ${parseErrMsg}`, "error");
       return {
         success: false,
         error: "Failed to parse extracted data.",

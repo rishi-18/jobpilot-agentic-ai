@@ -22,6 +22,7 @@ export type Education = {
 export type ResumeFile = {
   name: string;
   size: number;
+  url?: string;
 };
 
 export type Profile = {

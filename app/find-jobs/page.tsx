@@ -1,28 +1,31 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { createInsforgeServer } from "@/lib/insforge-server";
 
 import { NavbarAccountButton } from "../navbar-account-button";
 import { UserSessionSync } from "../user-session-sync";
 import { SearchControls } from "./search-controls";
+import { FilterControls, PaginationControls } from "./filter-controls";
 
 type JobRow = {
+  id: string;
   company: string;
   role: string;
   score: number;
   salary: string;
-  source: "Search" | "URL";
+  source: string;
   dateFound: string;
 };
 
-const jobs: JobRow[] = [
-  { company: "Vercel", role: "Frontend Engineer", score: 94, salary: "$180k - $220k", source: "Search", dateFound: "Today" },
-  { company: "Stripe", role: "UI Engineer", score: 88, salary: "$190k - $240k", source: "URL", dateFound: "Today" },
-  { company: "Linear", role: "Product Engineer", score: 96, salary: "$150k - $190k", source: "Search", dateFound: "Yesterday" },
-  { company: "Notion", role: "Frontend Developer", score: 72, salary: "$140k - $180k", source: "Search", dateFound: "Yesterday" },
-  { company: "OpenAI", role: "Software Engineer", score: 91, salary: "$200k - $260k", source: "URL", dateFound: "2 days ago" },
-  { company: "Figma", role: "Design Systems Engineer", score: 85, salary: "$170k - $220k", source: "Search", dateFound: "2 days ago" },
-];
+type FindJobsPageProps = {
+  searchParams?: Promise<{
+    page?: string;
+    sort?: string;
+    filter?: string;
+    q?: string;
+  }>;
+};
 
 function scoreBar(score: number): string {
   if (score >= 80) return "bg-success";
@@ -30,16 +33,94 @@ function scoreBar(score: number): string {
   return "bg-warning";
 }
 
-export default async function FindJobsPage() {
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return `${diffDays} days ago`;
+}
+
+export default async function FindJobsPage({ searchParams }: FindJobsPageProps) {
   const insforge = await createInsforgeServer();
   const {
     data: { user },
   } = await insforge.auth.getCurrentUser();
 
-  const sessionUser = user
-    ? { id: user.id, email: user.email ?? null, name: user.profile?.name ?? null }
-    : null;
-  const accountLabel = sessionUser?.name?.trim() || sessionUser?.email || "Account";
+  if (!user) {
+    redirect("/login");
+  }
+
+  const sessionUser = {
+    id: user.id,
+    email: user.email ?? null,
+    name: user.profile?.name ?? null,
+  };
+  const accountLabel = sessionUser.name?.trim() || sessionUser.email || "Account";
+
+  // Parse search params
+  const params = await searchParams;
+  const page = parseInt(params?.page || "1", 10);
+  const sort = params?.sort || "newest";
+  const filter = params?.filter || "all";
+  const q = params?.q || "";
+
+  const pageSize = 20;
+
+  // Build the database query
+  let dbQuery = insforge.database
+    .from("jobs")
+    .select("*", { count: "exact" })
+    .eq("user_id", user.id);
+
+  // Apply search filtering
+  if (filter === "high") {
+    dbQuery = dbQuery.gte("match_score", 70);
+  } else if (filter === "low") {
+    dbQuery = dbQuery.lt("match_score", 70);
+  }
+
+  // Apply text search
+  if (q) {
+    dbQuery = dbQuery.or(`title.ilike.%${q}%,company.ilike.%${q}%`);
+  }
+
+  // Apply sorting
+  if (sort === "score") {
+    dbQuery = dbQuery
+      .order("match_score", { ascending: false })
+      .order("found_at", { ascending: false });
+  } else if (sort === "oldest") {
+    dbQuery = dbQuery.order("found_at", { ascending: true });
+  } else {
+    dbQuery = dbQuery.order("found_at", { ascending: false });
+  }
+
+  // Apply pagination range
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  dbQuery = dbQuery.range(from, to);
+
+  const { data: dbJobs = [], count, error: fetchErr } = await dbQuery;
+
+  if (fetchErr) {
+    console.error("[find-jobs] Failed to fetch filtered/paginated jobs:", fetchErr);
+  }
+
+  const totalCount = count || 0;
+
+  const jobsList: JobRow[] = (dbJobs || []).map((job: any) => ({
+    id: job.id,
+    company: job.company,
+    role: job.title,
+    score: job.match_score || 0,
+    salary: job.salary || "N/A",
+    source: job.source === "search" ? "Search" : "URL",
+    dateFound: formatRelativeTime(job.found_at),
+  }));
 
   return (
     <main className="min-h-screen bg-background text-text-primary">
@@ -64,24 +145,11 @@ export default async function FindJobsPage() {
 
         <section className="border-x border-border bg-surface px-8 py-8">
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
-            <SearchControls userId={user?.id ?? ""} />
-
-            <div className="mt-4 rounded-xl border border-success-light bg-success-lightest px-4 py-3 text-[14px] font-medium text-success-darker">
-              Found 8 jobs and saved 4 strong matches.
-            </div>
+            <SearchControls userId={user.id} />
           </div>
 
           <div className="mt-6 rounded-2xl border border-border bg-surface p-6 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <input
-                className="w-full rounded-md border border-border bg-surface px-4 py-3 text-[14px] text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent lg:max-w-md"
-                placeholder="Filter by company or role..."
-              />
-              <div className="flex flex-wrap gap-3">
-                <button className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary">All Matches</button>
-                <button className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-text-primary">Match Score</button>
-              </div>
-            </div>
+            <FilterControls />
 
             <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-surface">
               <div className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.9fr] border-b border-border px-6 py-3 text-[12px] font-medium uppercase tracking-[0.12em] text-text-secondary">
@@ -93,41 +161,44 @@ export default async function FindJobsPage() {
                 <span>Date Found</span>
               </div>
               <div className="divide-y divide-border">
-                {jobs.map((job) => (
-                  <div key={`${job.company}-${job.role}`} className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.9fr] items-center px-6 py-4 text-[14px] text-text-primary hover:bg-surface-secondary">
-                    <span className="font-medium">{job.company}</span>
-                    <span>{job.role}</span>
-                    <div className="flex items-center gap-3">
-                      <div className="h-1.5 w-16 rounded-full bg-border">
-                        <div className={`h-1.5 rounded-full ${scoreBar(job.score)}`} style={{ width: `${job.score}%` }} />
-                      </div>
-                      <span className="font-medium">{job.score}%</span>
-                    </div>
-                    <span className="text-text-secondary">{job.salary}</span>
-                    <span>
-                      <span className={`inline-flex rounded-full px-2 py-1 text-[12px] font-medium ${job.source === "Search" ? "bg-success-lightest text-success-foreground" : "bg-surface-secondary text-text-secondary"}`}>
-                        {job.source}
-                      </span>
-                    </span>
-                    <span className="text-text-muted">{job.dateFound}</span>
+                {jobsList.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <p className="text-[15px] font-medium text-text-secondary">No matching jobs found.</p>
+                    <p className="mt-1 text-sm text-text-muted">Adjust your filter options or enter a search query above.</p>
                   </div>
-                ))}
+                ) : (
+                  jobsList.map((job) => (
+                    <div key={job.id} className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.8fr_0.9fr] items-center px-6 py-4 text-[14px] text-text-primary hover:bg-surface-secondary">
+                      <span className="font-medium">{job.company}</span>
+                      <span>
+                        <Link href={`/find-jobs/${job.id}`} className="hover:text-accent transition-colors">
+                          {job.role}
+                        </Link>
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="h-1.5 w-16 rounded-full bg-border">
+                          <div className={`h-1.5 rounded-full ${scoreBar(job.score)}`} style={{ width: `${job.score}%` }} />
+                        </div>
+                        <span className="font-medium">{job.score}%</span>
+                      </div>
+                      <span className="text-text-secondary">{job.salary}</span>
+                      <span>
+                        <span className={`inline-flex rounded-full px-2 py-1 text-[12px] font-medium ${job.source === "Search" ? "bg-success-lightest text-success-foreground" : "bg-surface-secondary text-text-secondary"}`}>
+                          {job.source}
+                        </span>
+                      </span>
+                      <span className="text-text-muted">{job.dateFound}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-between text-sm text-text-secondary">
-              <span>Showing 1 to 6 of 24 results</span>
-              <div className="flex items-center gap-2">
-                <button className="rounded-md border border-border bg-surface px-3 py-2">Previous</button>
-                <button className="rounded-md border border-border bg-accent px-3 py-2 text-accent-foreground">1</button>
-                <button className="rounded-md border border-border bg-surface px-3 py-2">2</button>
-                <button className="rounded-md border border-border bg-surface px-3 py-2">3</button>
-                <button className="rounded-md border border-border bg-surface px-3 py-2">Next</button>
-              </div>
-            </div>
+            <PaginationControls totalCount={totalCount} currentPage={page} pageSize={pageSize} />
           </div>
         </section>
       </div>
     </main>
   );
 }
+

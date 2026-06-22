@@ -31,7 +31,7 @@ type ProfileRow = {
   resume_pdf_url: string | null;
 };
 
-function profileFromRow(row: ProfileRow, email: string): Profile {
+function profileFromRow(row: ProfileRow, email: string, signedUrl?: string): Profile {
   // Always layer the auth email on top so the disabled email field shows the
   // real, current identity even if the stored row is stale.
   return {
@@ -58,7 +58,11 @@ function profileFromRow(row: ProfileRow, email: string): Profile {
     portfolioUrl: row.portfolio_url ?? "",
     workAuthorization: row.work_authorization ?? "",
     resume: row.resume_pdf_url
-      ? { name: decodeURIComponent(row.resume_pdf_url.split("/").pop() || "resume.pdf"), size: 0 }
+      ? {
+          name: decodeURIComponent(row.resume_pdf_url.split("/").pop() || "resume.pdf"),
+          size: 0,
+          url: signedUrl,
+        }
       : null,
   };
 }
@@ -84,7 +88,39 @@ export default async function ProfilePage() {
     if (error) {
       console.error("[profile/page] failed to load profile row", error);
     } else if (row) {
-      initialProfile = profileFromRow(row as ProfileRow, authEmail);
+      let signedUrl: string | undefined;
+      const dbRow = row as ProfileRow;
+      if (dbRow.resume_pdf_url) {
+        try {
+          let objectPath = `${user.id}/resume.pdf`;
+          try {
+            const urlObj = new URL(dbRow.resume_pdf_url);
+            const parts = urlObj.pathname.split("/objects/");
+            if (parts.length > 1) {
+              objectPath = decodeURIComponent(parts[1]);
+            } else {
+              const cdnParts = urlObj.pathname.split("/resumes/");
+              if (cdnParts.length > 1) {
+                objectPath = decodeURIComponent(cdnParts[1]);
+              }
+            }
+          } catch (err) {
+            console.warn("[profile/page] failed to parse resume_pdf_url:", err);
+          }
+
+          const { data: signedData, error: signedError } = await insforge.storage
+            .from("resumes")
+            .createSignedUrl(objectPath, 3600);
+          if (signedError) {
+            console.error("[profile/page] failed to create signed URL", signedError);
+          } else if (signedData) {
+            signedUrl = signedData.signedUrl;
+          }
+        } catch (signedErr) {
+          console.error("[profile/page] failed to generate signed URL", signedErr);
+        }
+      }
+      initialProfile = profileFromRow(dbRow, authEmail, signedUrl);
     }
   }
 
